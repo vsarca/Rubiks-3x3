@@ -2,7 +2,9 @@
 #pragma GCC optimize("unroll-loops")
 
 #include <bits/stdc++.h>
+#include <ext/pb_ds/assoc_container.hpp>
 using namespace std;
+using namespace __gnu_pbds;
 
 typedef unsigned long long ull;
 
@@ -266,8 +268,6 @@ void phase_2_solver(void)
     }
 }
 
-double DEBUG_2 = timer.clock()();
-
 /// "Tables"
 
 struct table
@@ -322,7 +322,7 @@ table tables[] = {{masks[0], masks[1]},
                   {masks[0], masks[3]},
                   {masks[1], masks[3]}};
 
-double DEBUG_3 = timer.clock()();
+double DEBUG_2 = timer.clock()();
 
 
 /// Phase 1
@@ -489,10 +489,10 @@ void sanity2(void)
 
 int main(void)
 {
-    printf("init times: %.2fs %.2fs %.2fs\n", DEBUG_1, DEBUG_2, DEBUG_3);
     sanity();
-
     phase_2_solver();
+    double DEBUG_3 = timer.clock()();
+    printf("init times: %.2fs %.2fs %.2fs\n", DEBUG_1, DEBUG_2, DEBUG_3);
     printf("Found %llu phase 2 positions\n", phase_2.size());
     sanity2();
     for (int i=0; i<4; i++) masks[i].print();
