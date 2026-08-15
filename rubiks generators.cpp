@@ -151,9 +151,30 @@ struct cube
         for (int i=11; i>=0; --i) printf(" %d", (other.verts>>5*i)&7);
         putchar('\n');
     }
-    void print_net(void)
+    void print_net(void) const
     {
-
+        char solved_input[55] = "000000000444222555333444222555333444222555333111111111";
+        char input[55] = "----0-----------------4--2--5--3-----------------1----";
+        for (int i=0; i<12; i++)
+        {
+            const auto source = (edges >> 5*i) & 31;
+            const auto pieceid = source&15;
+            const auto piecerot = source>>4;
+            input[edgelist[i][0]] = solved_input[edgelist[pieceid][piecerot]];
+            input[edgelist[i][1]] = solved_input[edgelist[pieceid][!piecerot]];
+        }
+        for (int i=0; i<8; i++)
+        {
+            const auto source = (verts >> 5*i) & 31;
+            const auto pieceid = source&7;
+            const auto piecerot = source>>3;
+            input[vertlist[i][piecerot]] = solved_input[vertlist[pieceid][0]];
+            input[vertlist[i][(piecerot+1+(1&(pieceid^i)))%3]] = solved_input[vertlist[pieceid][1]];
+            input[vertlist[i][(piecerot+2-(1&(pieceid^i)))%3]] = solved_input[vertlist[pieceid][2]];
+        }
+        for (int t=0; t<3; t++) { printf("      "); for (int i=0; i<3; i++) printf("%c ", input[3*t+i]); putchar('\n'); }
+        for (int t=0; t<3; t++) { for (int i=9; i<21; i++) printf("%c ", input[12*t+i]); putchar('\n'); }
+        for (int t=0; t<3; t++) { printf("      "); for (int i=45; i<48; i++) printf("%c ", input[3*t+i]); putchar('\n'); }
     }
     bool operator==(const cube& other) const
     {
@@ -555,6 +576,8 @@ void sanity_symmetry(void)
     auto a = UDFBLR[0].get_canonical();
     auto b = UDFBLR[2].get_canonical();
     test_helper(2, a, b);
+    a.print_net();
+    b.print_net();
 
     return;
 
