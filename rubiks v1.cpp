@@ -35,7 +35,6 @@ unsigned vertmoveorient[18][8][3] = {{{0,2,1},{0,2,1},{0,2,1},{0,2,1},{0,1,2},{0
                                      {{0,1,2},{2,1,0},{2,1,0},{0,1,2},{0,1,2},{2,1,0},{2,1,0},{0,1,2}},{{0,1,2},{0,1,2},{1,0,2},{1,0,2},{0,1,2},{0,1,2},{1,0,2},{1,0,2}},{{1,0,2},{1,0,2},{0,1,2},{0,1,2},{1,0,2},{1,0,2},{0,1,2},{0,1,2}}};
 
 struct prng_input {} RNG;
-int TRACEBACK;
 long long nodes_visited;
 struct cube
 {
@@ -123,15 +122,11 @@ struct cube
         return cube(new_edges, new_verts, move_count+1, moveid);
     }
 
-    // Score function
-    static int get_score(unsigned long long edges, unsigned long long verts, int move_count)
+    // Score functions
+    static int simple_score(unsigned long long edges, unsigned long long verts, int move_count)
     {
         int score = -10 * move_count;
-        if (edges == solved.edges && verts == solved.verts)
-        {
-            TRACEBACK = 1;
-            return INT_MAX - move_count;
-        }
+        if (edges == solved.edges && verts == solved.verts) return INT_MAX - move_count;
         unsigned long long ecopy = edges;
         for (int i=0; i<12; i++)
         {
@@ -145,6 +140,65 @@ struct cube
             ecopy >>= 5;
         }
         return score;
+    }
+    static int cfop_score(unsigned long long edges, unsigned long long verts, int move_count)
+    {
+        if (edges == solved.edges && verts == solved.verts) return INT_MAX - move_count;
+
+        // Cross, F2L, orient cross, orient all, permute
+        const int C_score = 1'000'000;
+        const int F_score = 100'000;
+        const int OC_score = 10'000;
+        const int OA_score = 1'000;
+        const int P_score = 100;
+
+        int score = -10 * move_count;
+        unsigned long long ecopy = edges, vcopy = verts;
+        // cross
+        for (int i=0; i<4; i++)
+        {
+            bool full = ((int)(ecopy&31) == i);
+            score += full * C_score;
+            ecopy >>= 5;
+        }
+
+        // F2L edges and verts
+        for (int i=4, j=0; i<8; i++, j++)
+        {
+            bool full_edge = ((int)(ecopy&31) == i);
+            bool full_vert = ((int)(vcopy&31) == i);
+            bool edge_wrong = !full_edge && ((int)(ecopy&15)>=4) && ((int)(ecopy&15)<8);
+            bool vert_wrong = !full_vert && ((int)(vcopy&7) < 4);
+            score += (full_edge & full_vert) * F_score - (edge_wrong - vert_wrong) * F_score/10;
+            ecopy >>= 5;
+            vcopy >>= 5;
+        }
+
+        // Orient, permute edges
+        for (int i=8; i<12; i++)
+        {
+            bool good_orient = ((int)(ecopy&15) >= 8) && !(ecopy&16);
+            bool full = ((int)(ecopy&31) == i);
+            score += good_orient * OC_score + full * P_score;
+            ecopy >>= 5;
+        }
+
+        // Orient, permute corners
+        int num_orient = 0;
+        for (int i=4; i<8; i++)
+        {
+            bool good_orient = ((int)(vcopy&7) >= 4) && !(vcopy&24);
+            bool full = ((int)(vcopy&31) == i);
+            num_orient += good_orient;
+            score += full * P_score;
+            vcopy >>= 5;
+        }
+        score += num_orient*OA_score - (num_orient&1)*2*OA_score;
+        return score;
+    }
+    static int get_score(unsigned long long edges, unsigned long long verts, int move_count)
+    {
+        return cfop_score(edges, verts, move_count);
     }
 }
 cube::solved(0x5a928398a418820, 0x398a418820);
@@ -178,11 +232,6 @@ pair<int,int> flat_search(cube cur, int iters, int prev_move)
             if ((prev_move-i+30)%6 == 1 && prev_move%6) continue;
         }
         auto [_,s] = flat_search(cur.make_move(i), iters-1, i);
-//        if (TRACEBACK)
-//        {
-//            printf("Received iters %d = %d %d\n", iters, i, s);
-//            return {i,s};
-//        }
         if (s > best_score) { best_move = i; best_score = s; }
     }
     return {best_move, best_score};
@@ -191,14 +240,10 @@ int deep_search(cube cur, int best_score, int prev_move)
 {
     printf("deep search on depth %d, score is %d\n", cur.move_count, best_score);
     if (cur == cube::solved) return 1;
-    for (int depth=6; depth<=6; depth++)
+    for (int depth=6; depth<=7; depth++)
     {
         auto [m,s] = flat_search(cur, depth, prev_move);
-//        printf("wtf %d %d\n", m, s);
-        TRACEBACK = 0;
         if (s < INT_MAX-1000 && s <= best_score) continue;
-
-//        printf("Found with depth %d score %d\n", depth, s);
         int res = deep_search(cur.make_move(m), s, m);
         if (res) return res+1;
         return 0;
@@ -224,50 +269,23 @@ Possible optimizations: DEPQ for OPEN, boost::unrodered_flat_set
 set<cube,greater<cube>> OPEN;
 unordered_set<cube> CLOSED;
 priority_queue<cube,vector<cube>,greater<cube>> CLOSED_search;
-const int OPEN_MAX = 1e7;
+const int OPEN_MAX = 1e6;
 const int CLOSED_MAX = 1e6;
-int cutoff_score, minimum_score;
-
-priority_queue<cube> FLAT_results;
-const int FLAT_MAX = 1;
-void MBBFS_flat_search(cube cur, int iters)
-{
-    nodes_visited++;
-    if (!iters) return;
-
-    for (int i=0; i<18; i++)
-    {
-        if (cur.prev_move >= 0)
-        {
-            if (i%6 == cur.prev_move%6) continue;
-            if ((cur.prev_move-i+30)%6 == 1 && cur.prev_move%6) continue;
-        }
-        cube next = cur.make_move(i);
-        if (CLOSED.count(next)) continue;
-        if (cur.score > cutoff_score)
-        {
-            FLAT_results.push(next);
-            if (FLAT_results.size() > FLAT_MAX) FLAT_results.pop();
-        }
-        if (cur.score > minimum_score) MBBFS_flat_search(next, iters-1); // only searchif we haven't ruined our score by too much
-    }
-}
-int MBBFS_2(cube start)
+int MBBFS(cube start)
 {
     OPEN.clear();
     CLOSED.clear();
     CLOSED_search = {};
-    OPEN.insert(start);
+    OPEN.insert(start); // start is alone, score does NOT matter
+    CLOSED.insert(start);
+    CLOSED_search.push(start);
     int MBBFS_iters = 0;
 
-    while (MBBFS_iters < 500 && !OPEN.empty())
+    while (MBBFS_iters < 1000 && !OPEN.empty())
     {
         cube cur = OPEN.extract(OPEN.begin()).value();
         nodes_visited++;
         MBBFS_iters++;
-        if (OPEN.size() > OPEN_MAX/2) cutoff_score = OPEN.rbegin()->score;
-        else cutoff_score = INT_MIN+1000;
-        minimum_score = cutoff_score - 1000;
         if (MBBFS_iters % 100 == 0)
         {
             printf("Visited %lld nodes\n", nodes_visited);
@@ -275,17 +293,23 @@ int MBBFS_2(cube start)
             printf("Sizes are %d/%d and %d/%d (%d)\n", OPEN.size(), OPEN_MAX, CLOSED.size(), CLOSED_MAX, CLOSED_search.size());
         }
         if (cur == cube::solved) return cur.move_count;
-        MBBFS_flat_search(cur, 6);
-        while (!FLAT_results.empty())
+        for (int i=0; i<18; i++)
         {
-            OPEN.insert(FLAT_results.top());
-            FLAT_results.pop();
+            if (cur.prev_move >= 0)
+            {
+                if (i%6 == cur.prev_move%6) continue;
+                if ((cur.prev_move-i+30)%6 == 1 && cur.prev_move%6) continue;
+            }
+            cube next = cur.make_move(i);
+            if (CLOSED.count(next)) continue;
+            auto [_,s] = flat_search(next, 4, next.prev_move);
+            next.score = s;
+            OPEN.insert(next);
+            CLOSED.insert(next);
+            CLOSED_search.push(next);
         }
 
         while (OPEN.size() > OPEN_MAX) OPEN.erase(prev(OPEN.end()));
-
-        CLOSED.insert(cur);
-        CLOSED_search.push(cur);
         while (CLOSED.size() > CLOSED_MAX)
         {
             CLOSED.erase(CLOSED_search.top());
@@ -304,10 +328,10 @@ int main(void)
 {
     for (int t=0; t<trials; t++)
     {
-        cube start = cube::random_cube(10, t);
+        cube start = cube::random_cube(30, t);
         clock_t start_t = clock();
-//        int moves = deep_search(start, start.score, -1);
-        int moves = MBBFS_2(start);
+        int moves = deep_search(start, start.score, -1);
+//        int moves = MBBFS(start);
         clock_t end_t = clock();
         wincount += !!moves;
         double time = (double)(end_t-start_t)/CLOCKS_PER_SEC;
