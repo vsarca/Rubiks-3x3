@@ -191,7 +191,7 @@ int deep_search(cube cur, int best_score, int prev_move)
 {
     printf("deep search on depth %d, score is %d\n", cur.move_count, best_score);
     if (cur == cube::solved) return 1;
-    for (int depth=6; depth<=7; depth++)
+    for (int depth=6; depth<=6; depth++)
     {
         auto [m,s] = flat_search(cur, depth, prev_move);
 //        printf("wtf %d %d\n", m, s);
@@ -226,7 +226,33 @@ unordered_set<cube> CLOSED;
 priority_queue<cube,vector<cube>,greater<cube>> CLOSED_search;
 const int OPEN_MAX = 1e7;
 const int CLOSED_MAX = 1e6;
-int MBBFS(cube start)
+int cutoff_score, minimum_score;
+
+priority_queue<cube> FLAT_results;
+const int FLAT_MAX = 1;
+void MBBFS_flat_search(cube cur, int iters)
+{
+    nodes_visited++;
+    if (!iters) return;
+
+    for (int i=0; i<18; i++)
+    {
+        if (cur.prev_move >= 0)
+        {
+            if (i%6 == cur.prev_move%6) continue;
+            if ((cur.prev_move-i+30)%6 == 1 && cur.prev_move%6) continue;
+        }
+        cube next = cur.make_move(i);
+        if (CLOSED.count(next)) continue;
+        if (cur.score > cutoff_score)
+        {
+            FLAT_results.push(next);
+            if (FLAT_results.size() > FLAT_MAX) FLAT_results.pop();
+        }
+        if (cur.score > minimum_score) MBBFS_flat_search(next, iters-1); // only searchif we haven't ruined our score by too much
+    }
+}
+int MBBFS_2(cube start)
 {
     OPEN.clear();
     CLOSED.clear();
@@ -234,30 +260,26 @@ int MBBFS(cube start)
     OPEN.insert(start);
     int MBBFS_iters = 0;
 
-    while (MBBFS_iters < 10000 && !OPEN.empty())
+    while (MBBFS_iters < 500 && !OPEN.empty())
     {
         cube cur = OPEN.extract(OPEN.begin()).value();
         nodes_visited++;
         MBBFS_iters++;
-        if (MBBFS_iters % 1000 == 0)
+        if (OPEN.size() > OPEN_MAX/2) cutoff_score = OPEN.rbegin()->score;
+        else cutoff_score = INT_MIN+1000;
+        minimum_score = cutoff_score - 1000;
+        if (MBBFS_iters % 100 == 0)
         {
             printf("Visited %lld nodes\n", nodes_visited);
-            printf("Currently exploring %d\n", cur.score);
+            printf("Currently exploring %d, depth %d\n", cur.score, cur.move_count);
             printf("Sizes are %d/%d and %d/%d (%d)\n", OPEN.size(), OPEN_MAX, CLOSED.size(), CLOSED_MAX, CLOSED_search.size());
         }
         if (cur == cube::solved) return cur.move_count;
-        for (int i=0; i<18; i++)
+        MBBFS_flat_search(cur, 6);
+        while (!FLAT_results.empty())
         {
-            if (cur.prev_move >= 0)
-            {
-                if (i%6 == cur.prev_move%6) continue;
-                if ((cur.prev_move-i+30)%6 == 1 && cur.prev_move%6) continue;
-            }
-            cube next = cur.make_move(i);
-            if (CLOSED.count(next)) continue;
-            auto [_,s] = flat_search(next, 4, next.prev_move);
-            next.score = s;
-            OPEN.insert(next);
+            OPEN.insert(FLAT_results.top());
+            FLAT_results.pop();
         }
 
         while (OPEN.size() > OPEN_MAX) OPEN.erase(prev(OPEN.end()));
@@ -282,10 +304,10 @@ int main(void)
 {
     for (int t=0; t<trials; t++)
     {
-        cube start = cube::random_cube(30, t);
+        cube start = cube::random_cube(10, t);
         clock_t start_t = clock();
 //        int moves = deep_search(start, start.score, -1);
-        int moves = MBBFS(start);
+        int moves = MBBFS_2(start);
         clock_t end_t = clock();
         wincount += !!moves;
         double time = (double)(end_t-start_t)/CLOCKS_PER_SEC;
