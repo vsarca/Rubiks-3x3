@@ -36,7 +36,6 @@ unsigned vertmoveorient[18][8][3] = {{{0,2,1},{0,2,1},{0,2,1},{0,2,1},{0,1,2},{0
                                      {{0,2,1},{0,2,1},{0,2,1},{0,2,1},{0,1,2},{0,1,2},{0,1,2},{0,1,2}},{{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,2,1},{0,2,1},{0,2,1},{0,2,1}},{{2,1,0},{0,1,2},{0,1,2},{2,1,0},{2,1,0},{0,1,2},{0,1,2},{2,1,0}},
                                      {{0,1,2},{2,1,0},{2,1,0},{0,1,2},{0,1,2},{2,1,0},{2,1,0},{0,1,2}},{{0,1,2},{0,1,2},{1,0,2},{1,0,2},{0,1,2},{0,1,2},{1,0,2},{1,0,2}},{{1,0,2},{1,0,2},{0,1,2},{0,1,2},{1,0,2},{1,0,2},{0,1,2},{0,1,2}}};
 
-struct prng_input {} RNG;
 long long nodes_visited;
 struct cube
 {
@@ -96,13 +95,6 @@ struct cube
     {
         return edges == other.edges && verts == other.verts;
     }
-//    auto operator<=>(const cube &other) const
-//    {
-//        if (score != other.score) return score <=> other.score;
-//        if (edges != other.edges) return edges <=> other.edges;
-//        return verts <=> other.verts;
-//        // we prune duplicates and accept that we may keep the longer path
-//    }
 
     // Move making
     cube make_move(int moveid)
@@ -125,18 +117,6 @@ struct cube
     }
 }
 cube::solved(0x5a928398a418820, 0x398a418820);
-//namespace std
-//{
-//    template <> struct hash<cube>
-//    {
-//        size_t operator()(const cube &c) const noexcept
-//        {
-//            size_t h1 = hash<ull>{}(c.edges);
-//            size_t h2 = hash<ull>{}(c.verts);
-//            return h1^(h2+0x9e3779b9+(h1<<6)+(h1>>2));
-//        }
-//    };
-//}
 
 
 /// "Chunks"
@@ -202,64 +182,19 @@ struct chunk
         for (int i=0; i<18; i++)
         {
             move_transform[i].resize(witness.size());
-            for (int j=0; j<witness.size(); j++) move_transform[i][j] = mask_to_id[mask(witness[j].make_move(i))];
+            for (size_t j=0; j<witness.size(); j++) move_transform[i][j] = mask_to_id[mask(witness[j].make_move(i))];
         }
     }
 };
-chunk edge_orient(mask_bits<1, 0b0'10000'10000'10000'10000'10000'10000'10000'10000'10000'10000'10000'10000>);
-chunk vert_orient(mask_bits<0, 0b0'11000'11000'11000'11000'11000'11000'11000'11000>);
-chunk edge_group(edge_groups);
-chunk vert_group(mask_bits<0, 0b0'00001'00001'00001'00001'00001'00001'00001'00001, 0b0'00001'00001'00001'00001>);
-
-
-/// "Tables"
-
-struct table
-{
-    vector<int> distance;
-    vector<int> move_transform[18];
-
-    void init(const vector<int> * const a_transform, const vector<int> * const b_transform)
-    {
-        // move table
-        int N = a_transform[0].size();
-        int M = b_transform[0].size();
-        assert(INT_MAX / N > M);
-        printf("Warning: creating table with size %d x 4 bytes\n", 18*N*M);
-        distance.resize(N*M, 0);
-        for (int i=0; i<18; i++)
-        {
-            move_transform[i].resize(N*M);
-            for (int j=0; j<N; j++)
-                for (int k=0; k<M; k++)
-                    move_transform[i][j*M+k] = a_transform[i][j]*M + b_transform[i][k];
-        }
-
-        // bfs
-        queue<int> q;
-        q.push(0);
-        while (!q.empty())
-        {
-            int cur = q.front();
-            q.pop();
-            for (int i=0; i<18; i++)
-            {
-                // ehh prev move pruning isn't crucial, maybe add later
-                int next = move_transform[i][cur];
-                if (!next || distance[next]) continue;
-                distance[next] = 1 + distance[cur];
-                q.push(next);
-            }
-        }
-    }
-
-    table(const chunk &a, const chunk &b) { init(a.move_transform, b.move_transform); }
-    table(const chunk &a, const table &b) { init(a.move_transform, b.move_transform); }
-};
+// Sizes: 2048 2187 34650 14
+chunk masks[] = {mask_bits<1, 0b0'10000'10000'10000'10000'10000'10000'10000'10000'10000'10000'10000'10000>,
+                 mask_bits<0, 0b0'11000'11000'11000'11000'11000'11000'11000'11000>,
+                 edge_groups,
+                 mask_bits<0, 0b0'00001'00001'00001'00001'00001'00001'00001'00001, 0b0'00001'00001'00001'00001>};
 
 /// "Heuristics"
 
-struct heuristic
+struct table
 {
     vector<char> distance;
 
@@ -269,7 +204,6 @@ struct heuristic
         int N = a_transform[0].size();
         int M = b_transform[0].size();
         assert(INT_MAX / N > M);
-        printf("Warning: creating heuristic with size %d bytes\n", N*M);
         distance.resize(N*M, 0);
         queue<int> q;
         q.push(0);
@@ -291,32 +225,111 @@ struct heuristic
         }
     }
 
-    heuristic(const chunk &a, const chunk &b) { init(a.move_transform, b.move_transform); }
-    heuristic(const chunk &a, const table &b) { init(a.move_transform, b.move_transform); }
-    heuristic(const table &a, const table &b) { init(a.move_transform, b.move_transform); }
+    table(const chunk &a, const chunk &b) { init(a.move_transform, b.move_transform); }
 };
 
-heuristic AB(edge_orient, vert_orient);
-heuristic CD(edge_group, vert_group);
+// Sizes:  4,478,976  485,100
+table AB(masks[0], masks[1]);
+table CD(masks[2], masks[3]);
+
+
+/// Phase 1 simplified cube state
+
+struct phase_1
+{
+    int heuristic, prev_move=-1;
+    int state[4];
+
+    phase_1(void) {}
+    phase_1(const cube &c)
+    {
+        for (int i=0; i<4; i++) state[i] = masks[i].mask_to_id[masks[i].mask(c)];
+    }
+
+    phase_1 make_move(int moveid) const
+    {
+        phase_1 ret;
+        for (int i=0; i<4; i++) ret.state[i] = masks[i].move_transform[moveid][state[i]];
+        ret.prev_move = moveid;
+        return ret;
+    }
+
+    void calc_heuristic(void)
+    {
+        int ab_estimate = AB.distance[state[0]*masks[1].move_transform[0].size() + state[1]];
+        int cd_estimate = CD.distance[state[2]*masks[3].move_transform[0].size() + state[3]];
+        heuristic = max(ab_estimate, cd_estimate);
+    }
+};
+
+
+//struct heuristic_order_phase_1
+//{
+//    bool operator()(const phase_1 &a, const phase_1 &b) const
+//    {
+//        return a.heuristic > b.heuristic;
+//    }
+//};
+//int phase_1_solver(const cube &raw)
+//{
+//    phase_1 start(raw);
+//    priority_queue<phase_1, vector<phase_1>, heuristic_order_phase_1> pq;
+//    pq.push(start);
+//
+//    while (!pq.empty())
+//    {
+//
+//    }
+//}
+
+int phase_1_dfs(const phase_1 &cur, const int depth, const int fmax)
+{
+    nodes_visited++;
+    if (!cur.heuristic) return depth;
+    if (cur.heuristic + depth > fmax) return -cur.heuristic-depth;
+
+    int ret = INT_MIN;
+    for (int i=0; i<18; i++)
+    {
+        if (cur.prev_move>=0)
+        {
+            if (i%6 == cur.prev_move%6) continue;
+            if ((cur.prev_move-i+30)%6 == 1 && cur.prev_move%6) continue;
+        }
+        phase_1 next = cur.make_move(i);
+        next.calc_heuristic();
+        ret = max(ret, phase_1_dfs(next, depth+1, fmax));
+    }
+    return ret;
+}
+int phase_1_solver(const cube &raw)
+{
+    phase_1 start(raw);
+    start.calc_heuristic();
+    for (int depth=8; depth<=20; depth++)
+//    for (int depth=start.heuristic; depth<=20; depth++)
+    {
+        int res = phase_1_dfs(start, 0, depth);
+        if (res >= 0) return res;
+    }
+    puts("failure");
+    return 0; // failure????
+}
 
 /// Main
 
-const int trials = 10;
+const int trials = 50;
 int wincount;
 int total_moves, min_moves=INT_MAX, max_moves;
 double total_time, min_time=INT_MAX, max_time;
 
 int main(void)
 {
-    printf("Sizes: %d %d %d %d\n", edge_orient.move_transform[0].size(), vert_orient.move_transform[0].size(), edge_group.move_transform[0].size(), vert_group.move_transform[0].size());
-    printf("Sizes: %d %d\n", AB.distance.size(), CD.distance.size());
-
     for (int t=0; t<trials; t++)
     {
         cube start = cube::random_cube(30, t);
         clock_t start_t = clock();
-        int moves = 0; // deep_search(start, start.score, -1);
-//        int moves = MBBFS(start);
+        int moves = phase_1_solver(start);
         clock_t end_t = clock();
         wincount += !!moves;
         double time = (double)(end_t-start_t)/CLOCKS_PER_SEC;
@@ -333,7 +346,7 @@ int main(void)
 
     printf("Visited %lld nodes\n", nodes_visited);
     printf("Success rate %d/%d = %g%%\n", wincount, trials, (double)wincount/trials*100);
-    printf("min/avg/max moves: %d / %.2g / %d\n", min_moves, (double)total_moves/wincount, max_moves);
+    printf("min/avg/max moves: %d / %.2f / %d\n", min_moves, (double)total_moves/wincount, max_moves);
     printf("min/avg/max time: %.2fs / %.2fs / %.2fs\n", min_time, total_time/trials, max_time);
     return 0;
 }
