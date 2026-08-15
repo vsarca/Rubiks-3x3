@@ -1,6 +1,8 @@
 #include <bits/stdc++.h>
 using namespace std;
 
+typedef unsigned long long ull;
+
 const unsigned centers[] = {4,22,25,28,31,49};
 unsigned translate[256];
 const unsigned inception[6] = {0,4,2,5,3,1};
@@ -35,11 +37,21 @@ unsigned vertmoveorient[18][8][3] = {{{0,2,1},{0,2,1},{0,2,1},{0,2,1},{0,1,2},{0
                                      {{0,2,1},{0,2,1},{0,2,1},{0,2,1},{0,1,2},{0,1,2},{0,1,2},{0,1,2}},{{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,2,1},{0,2,1},{0,2,1},{0,2,1}},{{2,1,0},{0,1,2},{0,1,2},{2,1,0},{2,1,0},{2,1,0},{0,1,2},{0,1,2}},
                                      {{0,1,2},{2,1,0},{2,1,0},{0,1,2},{0,1,2},{0,1,2},{2,1,0},{2,1,0}},{{0,1,2},{0,1,2},{1,0,2},{1,0,2},{1,0,2},{0,1,2},{0,1,2},{1,0,2}},{{1,0,2},{1,0,2},{0,1,2},{0,1,2},{0,1,2},{1,0,2},{1,0,2},{0,1,2}}};
 
+unsigned raw_edgesymmove[4][12];
+unsigned raw_vertsymmove[4][8];
+unsigned raw_edgesymorient[4][12][2];
+unsigned raw_vertsymorient[4][8][3];
+
+unsigned edgesymmove[48][12];
+unsigned vertsymmove[48][8];
+unsigned edgesymorient[48][12][2];
+unsigned vertsymorient[48][8][3];
+
 struct read_input {} IN;
 struct prng_input {} RNG;
 struct cube
 {
-    static cube solved;
+    static cube solved, twisted;
     static char input[55];
 
     unsigned long long edges=0, verts=0;
@@ -56,14 +68,24 @@ struct cube
         if (y<z) return base|8;
         return base|16;
     }
-    cube(read_input IN)
+    cube(read_input IN) // raw input in generators
     {
         assert(+input == +this->input);
         for (int i=0; i<54; i++) scanf("%s", input+i);
-        for (int i=0; i<6; i++) translate[(int)input[centers[i]]] = inception[i];
+        for (int i=0; i<6; i++) translate[(int)'0'+i] = i;
+//        for (int i=0; i<6; i++) translate[(int)input[centers[i]]] = inception[i];
         for (int i=0; i<54; i++) input[i] = translate[(int)input[i]];
         for (int i=0; i<12; i++) edges |= translate_edge(input[edgelist[i][0]], input[edgelist[i][1]])<<(5*i);
         for (int i=0; i< 8; i++) verts |= translate_vert(input[vertlist[i][0]], input[vertlist[i][1]], input[vertlist[i][2]])<<(5*i);
+
+        // Sanity
+        int cnt[12] = {0};
+        for (int i=0; i<12; i++) cnt[(edges>>5*i)&15]++;
+        for (int i=0; i<12; i++) assert(cnt[i] == 1);
+        for (int i=0; i<12; i++) cnt[i] = 0;
+        for (int i=0; i<8; i++) cnt[(verts>>5*i)&7]++;
+        for (int i=0; i<8; i++) assert(cnt[i] == 1);
+
     }
     cube(long long edges, long long verts) : edges(edges), verts(verts) {}
     cube(prng_input RNG) : edges(solved.edges), verts(solved.verts)
@@ -92,27 +114,86 @@ struct cube
 
 
     // Move making
-    cube make_move(int moveid)
+    cube make_move(int moveid) const
     {
-        cube ret(0,0);
-        unsigned long long ecopy = edges;
+        ull new_edges=0, new_verts=0;
         for (int i=0; i<12; i++)
         {
-            unsigned long long new_thing = (ecopy&15) | (edgemoveorient[moveid][i][1&(ecopy>>4)]<<4);
-            ret.edges |= new_thing << (5*edgemovetable[moveid][i]);
-            ecopy >>= 5;
+            const auto source = (edges >> 5*i) & 31;
+            const auto pieceid = source&15;
+            const auto piecerot = source>>4;
+            new_edges |= (ull)(pieceid | (edgemoveorient[moveid][i][piecerot]<<4)) << 5*edgemovetable[moveid][i];
         }
-        ecopy = verts; // ahh yes edge copy = vertices great thinking idiot
         for (int i=0; i<8; i++)
         {
-            unsigned long long new_thing = (ecopy&7) | (vertmoveorient[moveid][i][3&(ecopy>>3)]<<3);
-            ret.verts |= new_thing << (5*vertmovetable[moveid][i]);
-            ecopy >>= 5;
+            const auto source = (verts >> 5*i) & 31;
+            const auto pieceid = source&7;
+            const auto piecerot = source>>3;
+            new_verts |= (ull)(pieceid | (vertmoveorient[moveid][i][piecerot]<<3)) << 5*vertmovetable[moveid][i];
         }
-        return ret;
+        return cube(new_edges, new_verts);
+    }
+
+    // Raw symmetry moving
+    cube make_raw_symmetry(int symid) const
+    {
+        ull new_edges=0, new_verts=0;
+        for (int i=0; i<12; i++)
+        {
+            const auto source = (edges >> 5*i) & 31;
+            const auto pieceid = source&15;
+            const auto piecerot = source>>4;
+            assert(pieceid<12);
+            assert(piecerot < 3);
+            const auto newloc = raw_edgesymmove[symid][i];
+            const auto newrot = raw_edgesymorient[symid][i][piecerot];
+            new_edges |= (ull)(pieceid | (newrot<<4)) << 5*newloc;
+        }
+        for (int i=0; i<8; i++)
+        {
+            const auto source = (verts >> 5*i) & 31;
+            const auto pieceid = source&7;
+            const auto piecerot = source>>3;
+            assert(piecerot < 3);
+            const auto newloc = raw_vertsymmove[symid][i];
+            const auto newrot = raw_vertsymorient[symid][i][piecerot];
+            new_verts |= (ull)(pieceid | (newrot<<3)) << 5*newloc;
+        }
+        return cube(new_edges, new_verts);
+    }
+
+    // Full symmetry moving
+    cube make_symmetry(int symid) const
+    {
+        ull new_edges=0, new_verts=0;
+        for (int i=0; i<12; i++)
+        {
+            const auto source = (edges >> 5*i) & 31;
+            const auto pieceid = source&15;
+            const auto piecerot = source>>4;
+            assert(pieceid<12);
+            assert(piecerot < 3);
+            const auto newloc = edgesymmove[symid][i];
+            const auto newid = edgesymmove[symid][pieceid];
+            const auto newrot = edgesymorient[symid][i][piecerot];
+            new_edges |= (ull)(newid | (newrot<<4)) << 5*newloc;
+        }
+        for (int i=0; i<8; i++)
+        {
+            const auto source = (verts >> 5*i) & 31;
+            const auto pieceid = source&7;
+            const auto piecerot = source>>3;
+            assert(piecerot < 3);
+            const auto newloc = vertsymmove[symid][i];
+            const auto newid = vertsymmove[symid][pieceid];
+            const auto newrot = vertsymorient[symid][i][piecerot];
+            new_verts |= (ull)(newid | (newrot<<3)) << 5*newloc;
+        }
+        return cube(new_edges, new_verts);
     }
 }
-cube::solved(0x5a928398a418820, 0x398a418820);
+cube::solved(0x5a928398a418820, 0x398a418820),
+cube::twisted(0x5a928398a418820, 0x7b9ac5a928);
 char cube::input[55];
 
 /*
@@ -149,72 +230,6 @@ Twist
       1 1 1
       4 1 5
 
-U
-      0 0 0
-      0 0 0
-      0 0 0
-2 2 2 5 5 5 3 3 3 4 4 4
-4 4 4 2 2 2 5 5 5 3 3 3
-4 4 4 2 2 2 5 5 5 3 3 3
-      1 1 1
-      1 1 1
-      1 1 1
-
-D
-      0 0 0
-      0 0 0
-      0 0 0
-4 4 4 2 2 2 5 5 5 3 3 3
-4 4 4 2 2 2 5 5 5 3 3 3
-2 2 2 5 5 5 3 3 3 4 4 4
-      1 1 1
-      1 1 1
-      1 1 1
-
-F
-      0 0 0
-      0 0 0
-      4 4 4
-4 4 1 2 2 2 0 5 5 3 3 3
-4 4 1 2 2 2 0 5 5 3 3 3
-4 4 1 2 2 2 0 5 5 3 3 3
-      5 5 5
-      1 1 1
-      1 1 1
-
-B
-      5 5 5
-      0 0 0
-      0 0 0
-0 4 4 2 2 2 5 5 1 3 3 3
-0 4 4 2 2 2 5 5 1 3 3 3
-0 4 4 2 2 2 5 5 1 3 3 3
-      1 1 1
-      1 1 1
-      4 4 4
-
-L
-      3 0 0
-      3 0 0
-      3 0 0
-4 4 4 0 2 2 5 5 5 3 3 1
-4 4 4 0 2 2 5 5 5 3 3 1
-4 4 4 0 2 2 5 5 5 3 3 1
-      2 1 1
-      2 1 1
-      2 1 1
-
-R
-      0 0 2
-      0 0 2
-      0 0 2
-4 4 4 2 2 1 5 5 5 0 3 3
-4 4 4 2 2 1 5 5 5 0 3 3
-4 4 4 2 2 1 5 5 5 0 3 3
-      1 1 3
-      1 1 3
-      1 1 3
-
 Priorities: Top/bottom, then Front/back, and then Left/right, labelled 1 to 6
 
 Edge list: 7/13, 3/10, 1/19, 5/16, 26/27, 30/29, 32/21, 24/23, 46/37, 50/40, 52/43, 48/34
@@ -225,6 +240,17 @@ Vertices take 2 orientation bits + 3 index bits. Orietation is how far down #1 p
 
 int tmp(int x, int y, int z) { return 4*(x&1)+2*(y&1)+(z&1); }
 int tmp2(int x, int y) { return x*6+y; }
+void map_generation()
+{
+    for (int i=0; i<12; i++) edgemap[tmp2(cube::input[edgelist[i][0]], cube::input[edgelist[i][1]])] = i;
+    for (int i=0; i<12; i++) edgemap[tmp2(cube::input[edgelist[i][1]], cube::input[edgelist[i][0]])] = i|16;
+    for (int i=0; i<8; i++) vertmap[tmp(cube::input[vertlist[i][0]], cube::input[vertlist[i][1]], cube::input[vertlist[i][2]])] = i;
+    for (int i=0; i<36; i++) printf("%d,",edgemap[i]);
+    putchar('\n');
+    for (int i=0; i<8; i++) printf("%d,",vertmap[i]);
+    putchar('\n');
+}
+
 
 void table_generation(void)
 {
@@ -234,66 +260,43 @@ void table_generation(void)
     const cube UDFBLR_twist[] = {IN,IN,IN,IN,IN,IN};
 
     // Compute edge stuff for 90 degree clockwise
-    for (int t=0; t<6; t++)
+    for (int t=0; t<6; t++) for (int i=0; i<12; i++)
     {
-        for (int i=0; i<12; i++)
-        {
-            int ind = 0;
-            unsigned long long ecopy = UDFBLR[t].edges;
-            for (; ind<12; ind++)
-            {
-                if ((ecopy&15) == i) break;
-                ecopy >>= 5;
-            }
-            edgemovetable[t][i] = ind;
-            edgemoveorient[t][i][0] = ((ecopy>>4)&1);
-            edgemoveorient[t][i][1] = !edgemoveorient[t][i][0];
-        }
+        auto source = (UDFBLR[t].edges >> 5*i)&31;
+        auto pieceid = source&15;
+        auto piecerot = source>>4;
+        edgemovetable[t][pieceid] = i;
+        edgemoveorient[t][pieceid][0] = piecerot;
+        edgemoveorient[t][pieceid][1] = !piecerot;
     }
 
     // Compound edge turns
-    for (int q=1; q<3; q++)
+    for (int q=1; q<3; q++) for (int t=0; t<6; t++) for (int i=0; i<12; i++)
     {
-        for (int t=0; t<6; t++)
-            for (int i=0; i<12; i++)
-            {
-                edgemovetable[6*q+t][i] = edgemovetable[6*(q-1)+t][edgemovetable[t][i]];
-                edgemoveorient[6*q+t][i][0] = edgemoveorient[6*(q-1)+t][edgemovetable[t][i]][edgemoveorient[t][i][0]];
-                edgemoveorient[6*q+t][i][1] = !edgemoveorient[6*q+t][i][0];
-            }
+        edgemovetable[6*q+t][i] = edgemovetable[6*(q-1)+t][edgemovetable[t][i]];
+        edgemoveorient[6*q+t][i][0] = edgemoveorient[6*(q-1)+t][edgemovetable[t][i]][edgemoveorient[t][i][0]];
+        edgemoveorient[6*q+t][i][1] = !edgemoveorient[6*q+t][i][0];
     }
 
-    // Compute vert stuff for 90 degree clockwisefor (int t=0; t<6; t++)
-    for (int t=0; t<6; t++)
+    // Compute vert stuff for 90 degree clockwise
+    for (int t=0; t<6; t++) for (int i=0; i<8; i++)
     {
-        for (int i=0; i<8; i++)
-        {
-            int ind = 0;
-            unsigned long long ecopy = UDFBLR[t].verts;
-            unsigned long long fcopy = UDFBLR_twist[t].verts;
-            for (; ind<8; ind++)
-            {
-                if ((ecopy&7) == i) break;
-                ecopy >>= 5;
-                fcopy >>= 5;
-            }
-            vertmovetable[t][i] = ind;
-            vertmoveorient[t][i][0] = ((ecopy>>3)&3);
-            // The other two directions are tricky, which is why we have twist cubes in the sample space
-            vertmoveorient[t][i][1] = ((fcopy>>3)&3);
-            vertmoveorient[t][i][2] = 3 - vertmoveorient[t][i][0] - vertmoveorient[t][i][1];
-        }
+        auto source = (UDFBLR[t].verts >> 5*i)&31;
+        auto source_twist = (UDFBLR_twist[t].verts >> 5*i)&31;
+        auto pieceid = source&7;
+        auto piecerot = source>>3;
+        auto piecerot_twist = source_twist>>3;
+        vertmovetable[t][pieceid] = i;
+        vertmoveorient[t][pieceid][0] = piecerot;
+        vertmoveorient[t][pieceid][1] = piecerot_twist;
+        vertmoveorient[t][pieceid][2] = 3 - piecerot - piecerot_twist;
     }
 
     // Compound vert turns
-    for (int q=1; q<3; q++)
+    for (int q=1; q<3; q++) for (int t=0; t<6; t++) for (int i=0; i<8; i++)
     {
-        for (int t=0; t<6; t++)
-            for (int i=0; i<8; i++)
-            {
-                vertmovetable[6*q+t][i] = vertmovetable[6*(q-1)+t][vertmovetable[t][i]];
-                for (int j=0; j<3; j++) vertmoveorient[6*q+t][i][j] = vertmoveorient[6*(q-1)+t][vertmovetable[t][i]][vertmoveorient[t][i][j]];
-            }
+        vertmovetable[6*q+t][i] = vertmovetable[6*(q-1)+t][vertmovetable[t][i]];
+        for (int j=0; j<3; j++) vertmoveorient[6*q+t][i][j] = vertmoveorient[6*(q-1)+t][vertmovetable[t][i]][vertmoveorient[t][i][j]];
     }
 
     // Output
@@ -316,19 +319,135 @@ void table_generation(void)
     } puts("}");
 }
 
+void print_raw_symmetries()
+{
+    puts("raw_edgesymmove");
+    printf("{"); for (int t=0; t<4; t++) {
+        printf(t?",{":"{"); for (int i=0; i<12; i++) printf(i?",%u":"%u", raw_edgesymmove[t][i]); printf("}");
+    } puts("}");
+    puts("raw_edgesymorient");
+    printf("{"); for (int t=0; t<4; t++) {
+        printf(t?",{":"{"); for (int i=0; i<12; i++) printf(i?",{%u,%u}":"{%u,%u}", raw_edgesymorient[t][i][0], raw_edgesymorient[t][i][1]); printf("}");
+    } puts("}");
+
+    puts("raw_vertsymmove");
+    printf("{"); for (int t=0; t<4; t++) {
+        printf(t?",{":"{"); for (int i=0; i<8; i++) printf(i?",%u":"%u", raw_vertsymmove[t][i]); printf("}");
+    } puts("}");
+    puts("raw_vertsymorient");
+    printf("{"); for (int t=0; t<4; t++) {
+        printf(t?",{":"{"); for (int i=0; i<8; i++) printf(i?",{%u,%u,%u}":"{%u,%u,%u}", raw_vertsymorient[t][i][0], raw_vertsymorient[t][i][1], raw_vertsymorient[t][i][2]); printf("}");
+    } puts("}");
+}
+
+void  print_full_symmetries()
+{
+    puts("edgesymmove");
+    printf("{"); for (int t=0; t<48; t++) {
+        printf(t?",{":"{"); for (int i=0; i<12; i++) printf(i?",%u":"%u", edgesymmove[t][i]); printf("}");
+    } puts("}");
+    puts("edgesymorient");
+    printf("{"); for (int t=0; t<48; t++) {
+        printf(t?",{":"{"); for (int i=0; i<12; i++) printf(i?",{%u,%u}":"{%u,%u}", edgesymorient[t][i][0], edgesymorient[t][i][1]); printf("}");
+    } puts("}");
+
+    puts("vertsymmove");
+    printf("{"); for (int t=0; t<48; t++) {
+        printf(t?",{":"{"); for (int i=0; i<8; i++) printf(i?",%u":"%u", vertsymmove[t][i]); printf("}");
+    } puts("}");
+    puts("vertsymorient");
+    printf("{"); for (int t=0; t<48; t++) {
+        printf(t?",{":"{"); for (int i=0; i<8; i++) printf(i?",{%u,%u,%u}":"{%u,%u,%u}", vertsymorient[t][i][0], vertsymorient[t][i][1], vertsymorient[t][i][2]); printf("}");
+    } puts("}");
+}
+
+void symmetry_generation()
+{
+    // Load test symmetries
+    freopen("symmetries.txt", "r", stdin);
+    const cube URF3F2U4LR2[] = {IN,IN,IN,IN};
+    const cube URF3F2U4LR2_twist[] = {IN,IN,IN,IN};
+
+    // Compute edge stuff for base symmetries
+    for (int t=0; t<4; t++) for (int i=0; i<12; i++)
+    {
+        auto source = (URF3F2U4LR2[t].edges >> 5*i)&31;
+        auto pieceid = source&15;
+        auto piecerot = source>>4;
+        raw_edgesymmove[t][pieceid] = i;
+        raw_edgesymorient[t][pieceid][0] = piecerot;
+        raw_edgesymorient[t][pieceid][1] = !piecerot;
+    }
+
+
+    // Compute vert stuff for base symmetries
+    for (int t=0; t<4; t++) for (int i=0; i<8; i++)
+    {
+        auto source = (URF3F2U4LR2[t].verts >> 5*i)&31;
+        auto source_twist = (URF3F2U4LR2_twist[t].verts >> 5*i)&31;
+        auto pieceid = source&7;
+        auto piecerot = source>>3;
+        auto piecerot_twist = source_twist>>3;
+        raw_vertsymmove[t][pieceid] = i;
+        raw_vertsymorient[t][pieceid][0] = piecerot;
+        raw_vertsymorient[t][pieceid][1] = piecerot_twist;
+        raw_vertsymorient[t][pieceid][2] = 3 - piecerot - piecerot_twist;
+    }
+
+    // Compound into the 48 symmetries
+    for (int t=0; t<48; t++)
+    {
+        cube cur1 = cube::solved;
+        cube cur2 = cube::twisted;
+        int tt = t;
+        int x1234[] = {tt>>4, (tt>>3)&1, (tt>>1)&3, tt&1};
+        for (int s=3; s>=0; --s) for (int l=0; l<x1234[s]; l++)
+        {
+            cur1 = cur1.make_raw_symmetry(s);
+            cur2 = cur2.make_raw_symmetry(s);
+        }
+
+        for (int i=0; i<12; i++)
+        {
+            auto source = (cur1.edges >> 5*i)&31;
+            auto pieceid = source&15;
+            auto piecerot = source>>4;
+            edgesymmove[t][pieceid] = i;
+            edgesymorient[t][pieceid][0] = piecerot;
+            edgesymorient[t][pieceid][1] = !piecerot;
+        }
+
+        for (int i=0; i<8; i++)
+        {
+            auto source = (cur1.verts >> 5*i)&31;
+            auto source_twist = (cur2.verts >> 5*i)&31;
+            auto pieceid = source&7;
+            auto piecerot = source>>3;
+            auto piecerot_twist = source_twist>>3;
+            vertsymmove[t][pieceid] = i;
+            vertsymorient[t][pieceid][0] = piecerot;
+            vertsymorient[t][pieceid][1] = piecerot_twist;
+            vertsymorient[t][pieceid][2] = 3 - piecerot - piecerot_twist;
+        }
+    }
+
+    // Output
+    print_raw_symmetries();
+    print_full_symmetries();
+    cube::solved.print();
+    cube::twisted.print();
+}
+
 int main(void)
 {
-    cube start(IN);
-    start.print();
+//    cube start(IN);
+//    start.print();
 
-//	// map generation
-//    for (int i=0; i<12; i++) edgemap[tmp2(cube::input[edgelist[i][0]], cube::input[edgelist[i][1]])] = i;
-//    for (int i=0; i<12; i++) edgemap[tmp2(cube::input[edgelist[i][1]], cube::input[edgelist[i][0]])] = i|16;
-//    for (int i=0; i<8; i++) vertexmap[tmp(cube::input[vertexlist[i][0]], cube::input[vertexlist[i][1]], cube::input[vertexlist[i][2]])] = i;
-//    for (int i=0; i<36; i++) printf("%d,",edgemap[i]); putchar('\n');
-//    for (int i=0; i<8; i++) printf("%d,",vertexmap[i]); putchar('\n');
+//    map_generation();
 
-    table_generation();
+//    table_generation();
+
+    symmetry_generation();
 
     return 0;
 }
