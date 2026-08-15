@@ -28,7 +28,7 @@ const unsigned vertlist[][3] = {{8,14,15},{2,18,17}, {0,20,9}, {6,12,11}, {47,38
 unsigned edgemap[36] = {0,0,0,2,3,1,0,0,8,10,11,9,16,24,0,8,7,4,18,26,24,0,6,5,19,27,23,22,0,6,17,25,20,21,22,0};
 unsigned vertmap[8] = {3,0,2,1,7,4,6,5};
 
-// [move, index] = index
+// [move, index] = index, UDFBLR order
 unsigned edgemovetable[18][12] = {{3,0,1,2,4,5,6,7,8,9,10,11},{0,1,2,3,4,5,6,7,9,10,11,8},{4,1,2,3,8,5,6,0,7,9,10,11},{0,1,6,3,4,2,10,7,8,9,5,11},{0,1,2,7,4,5,3,11,8,9,10,6},{0,5,2,3,1,9,6,7,8,4,10,11},{2,3,0,1,4,5,6,7,8,9,10,11},
                                   {0,1,2,3,4,5,6,7,10,11,8,9},{8,1,2,3,7,5,6,4,0,9,10,11},{0,1,10,3,4,6,5,7,8,9,2,11},{0,1,2,11,4,5,7,6,8,9,10,3},{0,9,2,3,5,4,6,7,8,1,10,11},{1,2,3,0,4,5,6,7,8,9,10,11},{0,1,2,3,4,5,6,7,11,8,9,10},
                                   {7,1,2,3,0,5,6,8,4,9,10,11},{0,1,5,3,4,10,2,7,8,9,6,11},{0,1,2,6,4,5,11,3,8,9,10,7},{0,4,2,3,9,1,6,7,8,5,10,11}};
@@ -63,6 +63,72 @@ struct cube
     short move_count, prev_move;
     ull edges=0, verts=0;
 
+
+
+    // Move making
+    template<int moveid> cube make_move(void) const
+    {
+        constexpr bool edge_preserve[] = {1,1,0,0,1,1, 1,1,1,1,1,1, 1,1,0,0,1,1};
+        ull ecopy = edges, new_edges=0, new_verts=0;
+        if constexpr (!edge_preserve[moveid])
+        {
+            for (int i=0; i<12; i++)
+            {
+                ull new_thing = (ecopy&15) | (edgemoveorient[moveid][i][1&(ecopy>>4)]<<4);
+                new_edges |= new_thing << (5*edgemovetable[moveid][i]);
+                ecopy >>= 5;
+            }
+        }
+        else
+        {
+            for (int i=0; i<12; i++)
+            {
+                new_edges |= (ecopy&31) << (5*edgemovetable[moveid][i]);
+                ecopy >>= 5;
+            }
+        }
+        ecopy = verts; // ahh yes edge copy = vertices great thinking idiot
+        if constexpr (moveid<6 || moveid>=12)
+        {
+            for (int i=0; i<8; i++)
+            {
+                ull new_thing = (ecopy&7) | (vertmoveorient[moveid][i][3&(ecopy>>3)]<<3);
+                new_verts |= new_thing << (5*vertmovetable[moveid][i]);
+                ecopy >>= 5;
+            }
+        }
+        else
+        {
+            for (int i=0; i<8; i++)
+            {
+                new_verts |= (ecopy&31) << (5*vertmovetable[moveid][i]);
+                ecopy >>= 5;
+            }
+        }
+        return cube(new_edges, new_verts, move_count+1, moveid);
+    }
+
+
+    using move_func = cube (cube::*)(void) const;
+    static constexpr move_func move_table[18] = {cube::make_move<0>,
+                                                 cube::make_move<1>,
+                                                 cube::make_move<2>,
+                                                 cube::make_move<3>,
+                                                 cube::make_move<4>,
+                                                 cube::make_move<5>,
+                                                 cube::make_move<6>,
+                                                 cube::make_move<7>,
+                                                 cube::make_move<8>,
+                                                 cube::make_move<9>,
+                                                 cube::make_move<10>,
+                                                 cube::make_move<11>,
+                                                 cube::make_move<12>,
+                                                 cube::make_move<13>,
+                                                 cube::make_move<14>,
+                                                 cube::make_move<15>,
+                                                 cube::make_move<16>,
+                                                 cube::make_move<17>};
+
     // Loading
     static ull translate_edge(int x, int y) { return edgemap[6*x+y]; }
     static ull translate_vert(int x, int y, int z)
@@ -96,7 +162,7 @@ struct cube
         ull verts = solved.verts;
         for (int i=0; i<scramble; i++)
         {
-            cube next = cube(edges, verts).make_move(rand()%18);
+            cube next = (cube(edges, verts).*move_table[rand()%18])();
             edges = next.edges;
             verts = next.verts;
         }
@@ -112,26 +178,6 @@ struct cube
     bool operator==(const cube &other) const
     {
         return edges == other.edges && verts == other.verts;
-    }
-
-    // Move making
-    cube make_move(int moveid)
-    {
-        ull ecopy = edges, new_edges=0, new_verts=0;
-        for (int i=0; i<12; i++)
-        {
-            ull new_thing = (ecopy&15) | (edgemoveorient[moveid][i][1&(ecopy>>4)]<<4);
-            new_edges |= new_thing << (5*edgemovetable[moveid][i]);
-            ecopy >>= 5;
-        }
-        ecopy = verts; // ahh yes edge copy = vertices great thinking idiot
-        for (int i=0; i<8; i++)
-        {
-            ull new_thing = (ecopy&7) | (vertmoveorient[moveid][i][3&(ecopy>>3)]<<3);
-            new_verts |= new_thing << (5*vertmovetable[moveid][i]);
-            ecopy >>= 5;
-        }
-        return cube(new_edges, new_verts, move_count+1, moveid);
     }
 }
 cube::solved(0x5a928398a418820, 0x398a418820);
@@ -186,7 +232,7 @@ struct chunk
                     if (i%6 == cur.prev_move%6) continue;
                     if ((cur.prev_move-i+30)%6 == 1 && cur.prev_move%6) continue;
                 }
-                cube next = cur.make_move(i);
+                cube next = (cur.*cube::move_table[i])();
                 if (mask_to_id.count(mask(next))) continue;
                 mask_to_id[mask(next)] = witness.size();
                 witness.push_back(next);
@@ -199,8 +245,13 @@ struct chunk
         for (int i=0; i<18; i++)
         {
             move_transform[i].resize(witness.size());
-            for (size_t j=0; j<witness.size(); j++) move_transform[i][j] = mask_to_id[mask(witness[j].make_move(i))];
+            for (size_t j=0; j<witness.size(); j++) move_transform[i][j] = mask_to_id[mask((witness[j].*cube::move_table[i])())];
         }
+    }
+
+    void print(void)
+    {
+        printf("Chunk size: %llu\n", move_transform[0].size());
     }
 };
 // Sizes: 2048 2187 34650 14
@@ -210,6 +261,7 @@ chunk masks[] = {mask_bits<1, 0b0'10000'10000'10000'10000'10000'10000'10000'1000
                  mask_bits<0, 0b0'00001'00001'00001'00001'00001'00001'00001'00001, 0b0'00001'00001'00001'00001>};
 
 
+/// Phase 2
 
 
 /// "Tables"
@@ -374,6 +426,7 @@ struct trial_record
 
 int main(void)
 {
+    for (int i=0; i<4; i++) masks[i].print();
     printf("Init time: %.2fs\n", timer.clock()());
     trial_record t1;
 
