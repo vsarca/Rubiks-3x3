@@ -3,6 +3,22 @@ using namespace std;
 
 typedef unsigned long long ull;
 
+struct timer_class
+{
+    double last = 0;
+    clock_t time = std::clock();
+    timer_class &clock(void)
+    {
+        clock_t new_time = std::clock();
+        last = (double)(new_time-time)/CLOCKS_PER_SEC;
+        time = new_time;
+        return *this;
+    }
+    double operator()(void) { return last; }
+} timer;
+
+/// Crap ton of hardcoded data
+
 const unsigned centers[] = {4,22,25,28,31,49};
 const unsigned inception[6] = {0,4,2,5,3,1};
 
@@ -35,6 +51,8 @@ unsigned vertmoveorient[18][8][3] = {{{0,2,1},{0,2,1},{0,2,1},{0,2,1},{0,1,2},{0
                                      {{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2}},{{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2}},{{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,1,2}},
                                      {{0,2,1},{0,2,1},{0,2,1},{0,2,1},{0,1,2},{0,1,2},{0,1,2},{0,1,2}},{{0,1,2},{0,1,2},{0,1,2},{0,1,2},{0,2,1},{0,2,1},{0,2,1},{0,2,1}},{{2,1,0},{0,1,2},{0,1,2},{2,1,0},{2,1,0},{0,1,2},{0,1,2},{2,1,0}},
                                      {{0,1,2},{2,1,0},{2,1,0},{0,1,2},{0,1,2},{2,1,0},{2,1,0},{0,1,2}},{{0,1,2},{0,1,2},{1,0,2},{1,0,2},{0,1,2},{0,1,2},{1,0,2},{1,0,2}},{{1,0,2},{1,0,2},{0,1,2},{0,1,2},{1,0,2},{1,0,2},{0,1,2},{0,1,2}}};
+
+/// Cube struct
 
 long long nodes_visited;
 struct cube
@@ -118,7 +136,6 @@ struct cube
 }
 cube::solved(0x5a928398a418820, 0x398a418820);
 
-
 /// "Chunks"
 
 template<bool edge, ull mask, ull xormask=0> ull mask_bits(const cube &c)
@@ -192,32 +209,42 @@ chunk masks[] = {mask_bits<1, 0b0'10000'10000'10000'10000'10000'10000'10000'1000
                  edge_groups,
                  mask_bits<0, 0b0'00001'00001'00001'00001'00001'00001'00001'00001, 0b0'00001'00001'00001'00001>};
 
-/// "Heuristics"
+
+
+
+/// "Tables"
 
 struct table
 {
-    vector<char> distance;
+    vector<int> distance;
+    vector<int> move_transform[18];
+    const chunk &a, &b;
+    const int N, M;
 
     void init(const vector<int> * const a_transform, const vector<int> * const b_transform)
     {
-        // setup
-        int N = a_transform[0].size();
-        int M = b_transform[0].size();
+        // move table
         assert(INT_MAX / N > M);
         distance.resize(N*M, 0);
-        queue<int> q;
-        q.push(0);
+        for (int i=0; i<18; i++)
+        {
+            move_transform[i].resize(N*M);
+            for (int j=0; j<N; j++)
+                for (int k=0; k<M; k++)
+                    move_transform[i][j*M+k] = a_transform[i][j]*M + b_transform[i][k];
+        }
 
         // bfs
+        queue<int> q;
+        q.push(0);
         while (!q.empty())
         {
-            int cur = q.front();
-            int j = cur/M, k = cur%M;
+           int cur = q.front();
             q.pop();
             for (int i=0; i<18; i++)
             {
-                // ehh prev move pruning isn't crucial, maybe add later
-                int next = a_transform[i][j]*M + b_transform[i][k];
+                // apparently move pruning is slower
+                int next = move_transform[i][cur];
                 if (!next || distance[next]) continue;
                 distance[next] = 1 + distance[cur];
                 q.push(next);
@@ -225,62 +252,50 @@ struct table
         }
     }
 
-    table(const chunk &a, const chunk &b) { init(a.move_transform, b.move_transform); }
+    int convert(const cube &c) const
+    {
+        return a.mask_to_id.at(a.mask(c))*M + b.mask_to_id.at(b.mask(c));
+    }
+
+    table(const chunk &a, const chunk &b) : a(a), b(b), N(a.move_transform[0].size()), M(b.move_transform[0].size()) { init(a.move_transform, b.move_transform); }
 };
 
 // Sizes:  4,478,976  485,100
-table AB(masks[0], masks[1]);
-table CD(masks[2], masks[3]);
+table tables[] = {{masks[0], masks[1]},
+                  {masks[2], masks[3]},
+                  {masks[0], masks[3]},
+                  {masks[1], masks[3]}};
 
 
 /// Phase 1 simplified cube state
 
 struct phase_1
 {
-    int heuristic, prev_move=-1;
+    int heuristic=0, prev_move=-1;
     int state[4];
 
     phase_1(void) {}
     phase_1(const cube &c)
     {
-        for (int i=0; i<4; i++) state[i] = masks[i].mask_to_id[masks[i].mask(c)];
+        for (int i=0; i<4; i++)
+            state[i] = tables[i].convert(c);
     }
 
     phase_1 make_move(int moveid) const
     {
         phase_1 ret;
-        for (int i=0; i<4; i++) ret.state[i] = masks[i].move_transform[moveid][state[i]];
+        for (int i=0; i<4; i++)
+            ret.state[i] = tables[i].move_transform[moveid][state[i]];
         ret.prev_move = moveid;
         return ret;
     }
 
     void calc_heuristic(void)
     {
-        int ab_estimate = AB.distance[state[0]*masks[1].move_transform[0].size() + state[1]];
-        int cd_estimate = CD.distance[state[2]*masks[3].move_transform[0].size() + state[3]];
-        heuristic = max(ab_estimate, cd_estimate);
+        for (int i=0; i<4; i++)
+            heuristic = max(heuristic, tables[i].distance[state[i]]);
     }
 };
-
-
-//struct heuristic_order_phase_1
-//{
-//    bool operator()(const phase_1 &a, const phase_1 &b) const
-//    {
-//        return a.heuristic > b.heuristic;
-//    }
-//};
-//int phase_1_solver(const cube &raw)
-//{
-//    phase_1 start(raw);
-//    priority_queue<phase_1, vector<phase_1>, heuristic_order_phase_1> pq;
-//    pq.push(start);
-//
-//    while (!pq.empty())
-//    {
-//
-//    }
-//}
 
 int phase_1_dfs(const phase_1 &cur, const int depth, const int fmax)
 {
@@ -306,7 +321,7 @@ int phase_1_solver(const cube &raw)
 {
     phase_1 start(raw);
     start.calc_heuristic();
-    for (int depth=8; depth<=20; depth++)
+    for (int depth=8; depth<=14; depth++) // experimental results show a distribution from 8 to 14
 //    for (int depth=start.heuristic; depth<=20; depth++)
     {
         int res = phase_1_dfs(start, 0, depth);
@@ -318,21 +333,19 @@ int phase_1_solver(const cube &raw)
 
 /// Main
 
-const int trials = 50;
-int wincount;
-int total_moves, min_moves=INT_MAX, max_moves;
-double total_time, min_time=INT_MAX, max_time;
+const int trials = 100;
 
-int main(void)
+struct trial_record
 {
-    for (int t=0; t<trials; t++)
+    int wincount=0, trials=0;
+    long long total_vis=0, min_vis=LLONG_MAX, max_vis=0;
+    int total_moves=0, min_moves=INT_MAX, max_moves=0;
+    double total_time=0, min_time=INT_MAX, max_time=0;
+
+    void add_trial(int moves, double time)
     {
-        cube start = cube::random_cube(30, t);
-        clock_t start_t = clock();
-        int moves = phase_1_solver(start);
-        clock_t end_t = clock();
+        ++trials;
         wincount += !!moves;
-        double time = (double)(end_t-start_t)/CLOCKS_PER_SEC;
         if (moves)
         {
             total_moves += moves;
@@ -342,11 +355,37 @@ int main(void)
         total_time += time;
         min_time = min(min_time, time);
         max_time = max(max_time, time);
+        total_vis += nodes_visited;
+        min_vis = min(min_vis, nodes_visited);
+        max_vis = max(max_vis, nodes_visited);
+        nodes_visited = 0;
     }
 
-    printf("Visited %lld nodes\n", nodes_visited);
-    printf("Success rate %d/%d = %g%%\n", wincount, trials, (double)wincount/trials*100);
-    printf("min/avg/max moves: %d / %.2f / %d\n", min_moves, (double)total_moves/wincount, max_moves);
-    printf("min/avg/max time: %.2fs / %.2fs / %.2fs\n", min_time, total_time/trials, max_time);
+    void print(void)
+    {
+        printf("Completed %d trials\n", trials);
+        printf("Success rate %d/%d = %g%%\n", wincount, trials, (double)wincount/trials*100);
+        printf("min/avg/max visited: %lld / %.2f / %lld\n", min_vis, (double)total_vis/wincount, max_vis);
+        printf("min/avg/max moves: %d / %.2f / %d\n", min_moves, (double)total_moves/wincount, max_moves);
+        printf("min/avg/max time: %.2fs / %.2fs / %.2fs\n", min_time, total_time/trials, max_time);
+        putchar('\n');
+    }
+};
+
+int main(void)
+{
+    printf("Init time: %.2fs\n", timer.clock()());
+    trial_record t1;
+
+    for (int t=0; t<trials; t++)
+    {
+        cube start = cube::random_cube(30, t);
+        timer.clock();
+        int moves = phase_1_solver(start);
+        double time = timer.clock()();
+        t1.add_trial(moves, time);
+
+        if ((t+1)%5 == 0) t1.print();
+    }
     return 0;
 }
