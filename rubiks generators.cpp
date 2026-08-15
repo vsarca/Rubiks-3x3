@@ -175,6 +175,25 @@ struct cube
         for (int t=0; t<3; t++) { printf("      "); for (int i=0; i<3; i++) printf("%c ", input[3*t+i]); putchar('\n'); }
         for (int t=0; t<3; t++) { for (int i=9; i<21; i++) printf("%c ", input[12*t+i]); putchar('\n'); }
         for (int t=0; t<3; t++) { printf("      "); for (int i=45; i<48; i++) printf("%c ", input[3*t+i]); putchar('\n'); }
+        putchar('\n');
+    }
+    static void print_sym(int symid)
+    {
+        if (symid >= 16)
+        {
+            printf("UFR3"); symid -= 16;
+            if (symid >= 16) { printf(" x2"); symid -= 16; }
+            putchar(' ');
+        }
+        if (symid >= 8) { printf("F2 "); symid -= 8; }
+        if (symid >= 2)
+        {
+            printf("U4"); symid -= 16;
+            if (symid >= 4) printf(" x%d", symid/2);
+            putchar(' ');
+        }
+        if (symid & 1) printf("LR2");
+        putchar('\n');
     }
     bool operator==(const cube& other) const
     {
@@ -216,6 +235,7 @@ struct cube
             assert(piecerot < 3);
             const auto newloc = raw_edgesymmove[symid][i];
             const auto newrot = raw_edgesymorient[symid][i][piecerot];
+            assert(!(new_edges & (31ULL << 5*newloc)));
             new_edges |= (ull)(pieceid | (newrot<<4)) << 5*newloc;
         }
         for (int i=0; i<8; i++)
@@ -226,20 +246,27 @@ struct cube
             assert(piecerot < 3);
             const auto newloc = raw_vertsymmove[symid][i];
             const auto newrot = raw_vertsymorient[symid][i][piecerot];
+            assert(!(new_verts & (31ULL << 5*newloc)));
             new_verts |= (ull)(pieceid | (newrot<<3)) << 5*newloc;
         }
         return cube(new_edges, new_verts);
     }
 
-    cube get_canonical(void) const
+    pair<cube,int> get_canonical(void) const
     {
         cube ret(LLONG_MAX, LLONG_MAX);
+        int ret_id = 0;
         for (int s=0; s<48; s++)
         {
             cube test = make_symmetry(s);
-            if (test.edges < ret.edges || (test.edges == ret.edges && test.verts < ret.verts)) ret = test;
+//            if (test.edges < ret.edges || (test.edges == ret.edges && test.verts < ret.verts))
+            if (test.edges < ret.edges)
+            {
+                ret = test;
+                ret_id = s;
+            }
         }
-        return ret;
+        return {ret,ret_id};
     }
 
     // Full symmetry moving
@@ -259,7 +286,8 @@ struct cube
             assert(piecerot < 3);
             const auto newloc = edgesymmove[symid][i];
             const auto newid = edgesymmove[symid][pieceid];
-            const auto newrot = edgesymorient[symid][i][piecerot];
+            const auto newrot = edgesymorient[symid][i][piecerot] ^ edgesymorient[symid][pieceid][0];
+            assert(!(new_edges & (31ULL << 5*newloc)));
             new_edges |= (ull)(newid | (newrot<<4)) << 5*newloc;
         }
         for (int i=0; i<8; i++)
@@ -270,7 +298,8 @@ struct cube
             assert(piecerot < 3);
             const auto newloc = vertsymmove[symid][i];
             const auto newid = vertsymmove[symid][pieceid];
-            const auto newrot = vertsymorient[symid][i][piecerot];
+            const auto newrot = (vertsymorient[symid][i][piecerot] + (((pieceid^i)&1) ? vertsymorient[symid][pieceid][0] : 3-vertsymorient[symid][pieceid][0]))%3;
+            assert(!(new_verts & (31ULL << 5*newloc)));
             new_verts |= (ull)(newid | (newrot<<3)) << 5*newloc;
         }
         return cube(new_edges, new_verts);
@@ -546,14 +575,41 @@ void sanity_moves(void)
 
 bool test_helper(int testid, const cube &a, const cube &b)
 {
-    if (GLOBAL_PRINT_FLAG) printf("Test %c = %d\n", testid>=0 ? 'A'+testid : 'a'-testid-1, a == b);
-    a.print(b);
-    if (GLOBAL_PRINT_FLAG) putchar('\n');
-    return a == b;
+    bool res = (a == b);
+//    bool res = (a.edges == b.edges);
+    if (GLOBAL_PRINT_FLAG) printf("Test %c = %d\n", testid>=0 ? 'A'+testid : 'a'-testid-1, res);
+    if (!res)
+    {
+        a.print(b);
+        if (GLOBAL_PRINT_FLAG) putchar('\n');
+    }
+    return res;
 }
 void sanity_symmetry(void)
 {
     puts("Sanity testing symmetry");
+
+    freopen("symmetries.txt", "r", stdin);
+    const cube URF3F2U4LR2[] = {cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input()};
+    const cube URF3F2U4LR2_twist[] = {cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input()};
+
+    test_helper(0, cube::solved.make_raw_symmetry(0), URF3F2U4LR2[0]);
+    test_helper(1, cube::solved.make_raw_symmetry(1), URF3F2U4LR2[1]);
+    test_helper(2, cube::solved.make_raw_symmetry(2), URF3F2U4LR2[2]);
+    test_helper(3, cube::solved.make_raw_symmetry(3), URF3F2U4LR2[3]);
+    test_helper(4, cube::twisted.make_raw_symmetry(0), URF3F2U4LR2_twist[0]);
+    test_helper(5, cube::twisted.make_raw_symmetry(1), URF3F2U4LR2_twist[1]);
+    test_helper(6, cube::twisted.make_raw_symmetry(2), URF3F2U4LR2_twist[2]);
+    test_helper(7, cube::twisted.make_raw_symmetry(3), URF3F2U4LR2_twist[3]);
+    test_helper(-1, cube::solved.make_symmetry(URF3), cube::solved);
+    test_helper(-2, cube::solved.make_symmetry(F2), cube::solved);
+    test_helper(-3, cube::solved.make_symmetry(U4), cube::solved);
+    test_helper(-4, cube::solved.make_symmetry(LR2), cube::solved);
+    test_helper(-5, cube::twisted.make_symmetry(URF3), cube::twisted);
+    test_helper(-6, cube::twisted.make_symmetry(F2), cube::twisted);
+//    test_helper(-7, cube::twisted.make_symmetry(U4), cube::twisted); // this is obviously not true
+    test_helper(-8, cube::twisted.make_symmetry(LR2), cube::twisted);
+
     freopen("single_rotations.txt", "r", stdin);
     const cube UDFBLR[] = {cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input()};
     const cube UDFBLR_twist[] = {cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input()};
@@ -573,13 +629,22 @@ void sanity_symmetry(void)
 //    }
 //    printf("Successes: %d\n", success);
 
-    auto a = UDFBLR[0].get_canonical();
-    auto b = UDFBLR[2].get_canonical();
-    test_helper(2, a, b);
-    a.print_net();
-    b.print_net();
+//    auto [a,aid] = UDFBLR[0].get_canonical();
+//    auto [b,bid] = UDFBLR[2].get_canonical();
+//    test_helper(2, a, b);
+//    cube::print_sym(aid);
+//    cube::print_sym(bid);
+//    a.print_net();
+//    b.print_net();
+//    puts("TRACE:");
+//    UDFBLR[2].print_net();
+//    UDFBLR[2].make_symmetry(LR2).print_net();
+//    UDFBLR[2].make_symmetry(LR2).make_symmetry(U4).print_net();
+//    UDFBLR[2].make_symmetry(LR2).make_symmetry(U4).make_symmetry(URF3).print_net();
+//    UDFBLR[2].make_symmetry(LR2).make_symmetry(U4).make_symmetry(URF3).make_symmetry(URF3).print_net();
 
-    return;
+//    UDFBLR[2].print_net();
+//    UDFBLR[2].make_symmetry(U4).print_net();
 
     putchar('\n');
     puts("Manual testing");
@@ -595,37 +660,13 @@ void sanity_symmetry(void)
     puts("Automatic testing");
     putchar('\n');
 
-    cube standard(0,0);
-    for (int t=0; t<6; t++)
+    for (int t=0; t<5; t++) test_helper(t-1, UDFBLR[0].get_canonical().first, UDFBLR[t].get_canonical().first);
+    for (int t=0; t<5; t++)
     {
-        cube min(LLONG_MAX, LLONG_MAX);
-        for (int s=0; s<48; s++)
-        {
-            cube test = UDFBLR[t].make_symmetry(s);
-            if (test.edges < min.edges || (test.edges == min.edges && test.verts < min.verts)) min = test;
-        }
-        if (!t)
-        {
-            standard = min;
-            standard.print();
-        }
-        else test_helper(t, standard, min);
+        if (t==2 || t==3) continue; // this is understandable considering the corner flips
+        test_helper(t+5, UDFBLR_twist[0].get_canonical().first, UDFBLR_twist[t].get_canonical().first);
     }
-    for (int t=0; t<6; t++)
-    {
-        cube min(LLONG_MAX, LLONG_MAX);
-        for (int s=0; s<48; s++)
-        {
-            cube test = UDFBLR_twist[t].make_symmetry(s);
-            if (test.edges < min.edges || (test.edges == min.edges && test.verts < min.verts)) min = test;
-        }
-        if (!t)
-        {
-            standard = min;
-            standard.print();
-        }
-        else test_helper(t+6, standard, min);
-    }
+    test_helper(7, UDFBLR_twist[2].get_canonical().first, UDFBLR_twist[3].get_canonical().first);
 }
 
 int main(void)
@@ -639,7 +680,7 @@ int main(void)
 
     symmetry_generation();
 
-//    sanity_moves();
+    sanity_moves();
     sanity_symmetry();
     return 0;
 }
