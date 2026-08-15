@@ -32,8 +32,8 @@ unsigned vertmap[8] = {3,0,2,1,7,4,6,5};
 unsigned edgemovetable[18][12] = {{3,0,1,2,4,5,6,7,8,9,10,11},{0,1,2,3,4,5,6,7,9,10,11,8},{4,1,2,3,8,5,6,0,7,9,10,11},{0,1,6,3,4,2,10,7,8,9,5,11},{0,1,2,7,4,5,3,11,8,9,10,6},{0,5,2,3,1,9,6,7,8,4,10,11},{2,3,0,1,4,5,6,7,8,9,10,11},
                                   {0,1,2,3,4,5,6,7,10,11,8,9},{8,1,2,3,7,5,6,4,0,9,10,11},{0,1,10,3,4,6,5,7,8,9,2,11},{0,1,2,11,4,5,7,6,8,9,10,3},{0,9,2,3,5,4,6,7,8,1,10,11},{1,2,3,0,4,5,6,7,8,9,10,11},{0,1,2,3,4,5,6,7,11,8,9,10},
                                   {7,1,2,3,0,5,6,8,4,9,10,11},{0,1,5,3,4,10,2,7,8,9,6,11},{0,1,2,6,4,5,11,3,8,9,10,7},{0,4,2,3,9,1,6,7,8,5,10,11}};
-unsigned vertmovetable[18][8] = {{1,0,3,2,4,5,6,7},{0,1,2,3,7,6,5,4},{3,1,2,0,7,5,6,4},{0,5,6,3,4,1,2,7},{0,1,6,7,4,5,2,3},{1,0,2,3,5,4,6,7},{0,1,2,3,4,5,6,7},{0,1,2,3,4,5,6,7},{0,1,2,3,4,5,6,7},{0,1,2,3,4,5,6,7},{0,1,2,3,4,5,6,7},
-                                 {0,1,2,3,4,5,6,7},{1,0,3,2,4,5,6,7},{0,1,2,3,7,6,5,4},{3,1,2,0,7,5,6,4},{0,5,6,3,4,1,2,7},{0,1,6,7,4,5,2,3},{1,0,2,3,5,4,6,7}};
+unsigned vertmovetable[18][8] = {{3,0,1,2,4,5,6,7},{0,1,2,3,5,6,7,4},{4,1,2,0,7,5,6,3},{0,2,6,3,4,1,5,7},{0,1,3,7,4,5,2,6},{1,5,2,3,0,4,6,7},{2,3,0,1,4,5,6,7},{0,1,2,3,6,7,4,5},{7,1,2,4,3,5,6,0},{0,6,5,3,4,2,1,7},{0,1,7,6,4,5,3,2},
+                                 {5,4,2,3,1,0,6,7},{1,2,3,0,4,5,6,7},{0,1,2,3,7,4,5,6},{3,1,2,7,0,5,6,4},{0,5,1,3,4,6,2,7},{0,1,6,2,4,5,7,3},{4,0,2,3,5,1,6,7}};
 
 // [move, index, orientation] = orientation;
 unsigned edgemoveorient[18][12][2] = {{{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1}},{{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1},{0,1}},
@@ -57,7 +57,7 @@ unsigned vertmoveorient[18][8][3] = {{{0,2,1},{0,2,1},{0,2,1},{0,2,1},{0,1,2},{0
 long long nodes_visited;
 struct cube
 {
-    static cube solved;
+    const static cube solved;
 
     int score; // TODO: update or remove
     short move_count, prev_move;
@@ -133,7 +133,10 @@ struct cube
     static ull translate_edge(int x, int y) { return edgemap[6*x+y]; }
     static ull translate_vert(int x, int y, int z)
     {
-        int base = vertmap[4*(x&1)+2*(y&1)+(z&1)];
+        int cx = min(x, min(y,z));
+        int cz = max(x, max(y,z));
+        int cy = x+y+z-cx-cz;
+        int base = vertmap[4*(cx&1)+2*(cy&1)+(cz&1)];
         if (x<y && x<z) return base;
         if (y<z) return base|8;
         return base|16;
@@ -162,7 +165,7 @@ struct cube
         ull verts = solved.verts;
         for (int i=0; i<scramble; i++)
         {
-            cube next = (cube(edges, verts).*move_table[rand()%18])();
+            cube next = cube(edges, verts).make_move(rand()%18);
             edges = next.edges;
             verts = next.verts;
         }
@@ -179,8 +182,28 @@ struct cube
     {
         return edges == other.edges && verts == other.verts;
     }
+
+    // Move making
+    cube make_move(int moveid) const
+    {
+        ull ecopy = edges, new_edges=0, new_verts=0;
+        for (int i=0; i<12; i++)
+        {
+            ull new_thing = (ecopy&15) | (edgemoveorient[moveid][i][1&(ecopy>>4)]<<4);
+            new_edges |= new_thing << (5*edgemovetable[moveid][i]);
+            ecopy >>= 5;
+        }
+        ecopy = verts; // ahh yes edge copy = vertices great thinking idiot
+        for (int i=0; i<8; i++)
+        {
+            ull new_thing = (ecopy&7) | (vertmoveorient[moveid][i][3&(ecopy>>3)]<<3);
+            new_verts |= new_thing << (5*vertmovetable[moveid][i]);
+            ecopy >>= 5;
+        }
+        return cube(new_edges, new_verts, move_count+1, moveid);
+    }
 }
-cube::solved(0x5a928398a418820, 0x398a418820);
+const cube::solved(0x5a928398a418820, 0x398a418820);
 
 /// "Chunks"
 
@@ -232,7 +255,7 @@ struct chunk
                     if (i%6 == cur.prev_move%6) continue;
                     if ((cur.prev_move-i+30)%6 == 1 && cur.prev_move%6) continue;
                 }
-                cube next = (cur.*cube::move_table[i])();
+                cube next = cur.make_move(i);
                 if (mask_to_id.count(mask(next))) continue;
                 mask_to_id[mask(next)] = witness.size();
                 witness.push_back(next);
@@ -245,7 +268,7 @@ struct chunk
         for (int i=0; i<18; i++)
         {
             move_transform[i].resize(witness.size());
-            for (size_t j=0; j<witness.size(); j++) move_transform[i][j] = mask_to_id[mask((witness[j].*cube::move_table[i])())];
+            for (size_t j=0; j<witness.size(); j++) move_transform[i][j] = mask_to_id[mask(witness[j].make_move(i))];
         }
     }
 
@@ -262,7 +285,46 @@ chunk masks[] = {mask_bits<1, 0b0'10000'10000'10000'10000'10000'10000'10000'1000
 
 
 /// Phase 2
+static inline ull wyhash64(ull x)
+{
+    x ^= x >> 32;
+    x *= 0xd6e8feb86659fd93ULL;
+    x ^= x >> 32;
+    x *= 0xd6e8feb86659fd93ULL;
+    x ^= x >> 32;
+    return x;
+}
+struct cube_hash
+{
+    size_t operator()(cube const& c) const noexcept
+    {
+        ull h = 0x9e3779b97f4a7c15ULL;
+        h ^= wyhash64(c.edges);
+        h = wyhash64(h ^ c.verts);
+        return h;
+    }
+};
+unordered_map<cube,int,cube_hash> phase_2;
 
+void phase_2_solver(void)
+{
+    phase_2.reserve(663552);
+    queue<cube> q;
+    q.push(cube::solved);
+    phase_2.emplace(cube::solved, 0);
+    while (!q.empty())
+    {
+        const cube cur = q.front();
+        const int dist = phase_2.at(cur)+1;
+        q.pop();
+        for (int i=6; i<12; i++) if (i != cur.prev_move)
+        {
+            const cube next = cur.make_move(i);
+            auto [_, inserted] = phase_2.try_emplace(next, dist);
+            if (inserted) q.push(next);
+        }
+    }
+}
 
 /// "Tables"
 
@@ -291,7 +353,7 @@ struct table
         q.push(0);
         while (!q.empty())
         {
-           int cur = q.front();
+            int cur = q.front();
             q.pop();
             for (int i=0; i<18; i++)
             {
@@ -319,7 +381,7 @@ table tables[] = {{masks[0], masks[1]},
                   {masks[1], masks[3]}};
 
 
-/// Phase 1 simplified cube state
+/// Phase 1
 
 struct phase_1
 {
@@ -349,10 +411,18 @@ struct phase_1
     }
 };
 
+int moves[20];
 int phase_1_dfs(const phase_1 &cur, const int depth, const int fmax)
 {
     nodes_visited++;
-    if (!cur.heuristic) return depth;
+    if (!cur.heuristic)
+    {
+        cube x = cube::solved;
+        for (int i=0; i<depth; i++) x = x.make_move(moves[i]);
+        auto it = phase_2.find(x);
+        if (it != phase_2.end()) return depth + it->second;
+        else return depth+100;
+    }
     if (cur.heuristic + depth > fmax) return -cur.heuristic-depth;
 
     int ret = INT_MIN;
@@ -365,6 +435,7 @@ int phase_1_dfs(const phase_1 &cur, const int depth, const int fmax)
         }
         phase_1 next = cur.make_move(i);
         next.calc_heuristic();
+        moves[depth] = i;
         ret = max(ret, phase_1_dfs(next, depth+1, fmax));
     }
     return ret;
@@ -424,8 +495,33 @@ struct trial_record
     }
 };
 
+void sanity(void)
+{
+    freopen("single_rotations.txt", "r", stdin);
+    const cube UDFBLR[] = {cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input()};
+    const cube UDFBLR_twist[] = {cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input(),cube::from_input()};
+
+    for (int t=0; t<6; t++)
+    {
+        cube test = cube::solved.make_move(t);
+        printf("Test %d = %d\n", t, test == UDFBLR[t]);
+        assert(test == UDFBLR[t]);
+    }
+    cube cheat = UDFBLR_twist[0].make_move(12);
+    for (int t=0; t<6; t++)
+    {
+        cube test = cheat.make_move(t);
+        printf("Test %d = %d\n", t+6, test == UDFBLR_twist[t]);
+        assert(test == UDFBLR_twist[t]);
+    }
+}
+
 int main(void)
 {
+    sanity();
+
+    phase_2_solver();
+    printf("Found %llu phase 2 positions\n", phase_2.size());
     for (int i=0; i<4; i++) masks[i].print();
     printf("Init time: %.2fs\n", timer.clock()());
     trial_record t1;
