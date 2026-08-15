@@ -253,6 +253,8 @@ struct universal_chunk
     vector<int> distance;
     vector<int> move_transform[18];
     universal_chunk(universal_map<cube,int> &m) : mask_to_id(m) {}
+
+    void print(void) { printf("Chunk size: %llu\n", move_transform[0].size()); }
 };
 template<int mapsize, cmfunc condensed_mask, fmfunc full_mask> struct chunk : universal_chunk_storage<chunk_map_type<mapsize,condensed_mask,full_mask>>, universal_chunk
 {
@@ -292,11 +294,6 @@ template<int mapsize, cmfunc condensed_mask, fmfunc full_mask> struct chunk : un
             move_transform[i].resize(witness.size());
             for (size_t j=0; j<witness.size(); j++) move_transform[i][j] = mask_to_id.get(witness[j].make_move(i));
         }
-    }
-
-    void print(void)
-    {
-        printf("Chunk size: %llu\n", move_transform[0].size());
     }
 };
 // Sizes: 2048 2187 34650 70
