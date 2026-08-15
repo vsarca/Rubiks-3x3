@@ -232,32 +232,10 @@ double DEBUG_1 = timer.clock()();
 
 
 /// Phase 2
-static inline ull wyhash64(ull x)
-{
-    x ^= x >> 32;
-    x *= 0xd6e8feb86659fd93ULL;
-    x ^= x >> 32;
-    x *= 0xd6e8feb86659fd93ULL;
-    x ^= x >> 32;
-    return x;
-}
-struct cube_hash
-{
-    size_t operator()(cube const& c) const noexcept
-    {
-        ull h = 0x9e3779b97f4a7c15ULL;
-        h ^= wyhash64(c.edges);
-        h = wyhash64(h ^ c.verts);
-        return h;
-    }
-};
-gp_hash_table<cube,pair<int,int>,cube_hash> old_phase_2;
-unordered_map<int,cube> phase_2_debug;
 
 int phase_2_trans[4][65536];
 int phase_2_lens[4]; // 96 24 24 24
 pair<int,int> phase_2[1327104];
-//unordered_map<int,pair<int,int>> phase_2;
 unsigned phase_2_mask(const cube &c)
 {
     unsigned piece[4] = {0};
@@ -274,20 +252,13 @@ unsigned phase_2_mask(const cube &c)
 void phase_2_solver(void)
 {
     memset(phase_2_trans[0], -1, sizeof(phase_2_trans));
-    int sanity_total = 0;
     const int move_reversal[] = {12,13,14,15,16,17,6,7,8,9,10,11,0,1,2,3,4,5};
     queue<cube> q;
     q.push(cube::solved);
     phase_2[phase_2_mask(cube::solved)] = {0,-1};
-    phase_2_debug[phase_2_mask(cube::solved)] = cube::solved;
-    sanity_total++;
-    old_phase_2.insert({cube::solved, pair<int,int>{0,-1}});
     while (!q.empty())
     {
         const cube cur = q.front();
-
-        const auto it = old_phase_2.find(cur);
-        auto [real_dist,_] = it->second;
 
         auto [dist,_] = phase_2[phase_2_mask(cur)];
         ++dist;
@@ -295,29 +266,12 @@ void phase_2_solver(void)
         for (int i=6; i<12; i++) if (i != cur.prev_move)
         {
             const cube next = cur.make_move(i);
-
-            auto [_, inserted] = old_phase_2.insert({next, pair<int,int>{dist,move_reversal[i]}});
-            if (inserted)
-            {
-                q.push(next);
-
-                const unsigned masked = phase_2_mask(next);
-                if (masked > 1327104) assert(0 + 0 + 0);
-//                printf("%d %d %d %d\n", phase_2_lens[0], phase_2_lens[1], phase_2_lens[2], phase_2_lens[3]);
-                if (phase_2[masked] != pair<int,int>{0,0})
-                {
-//                    puts("Well shit, these comapre equal");
-//                    next.print();
-//                    phase_2_debug[masked].print();
-                }
-                phase_2[masked] = {dist,move_reversal[i]};
-                phase_2_debug[masked] = next;
-                sanity_total++;
-                q.push(next);
-            }
+            const unsigned masked = phase_2_mask(next);
+            if (phase_2[masked] != pair<int,int>{0,0}) continue;
+            phase_2[masked] = {dist,move_reversal[i]};
+            q.push(next);
         }
     }
-    printf("uhhh %d %d %d %d\n", phase_2_lens[0], phase_2_lens[1], phase_2_lens[2], phase_2_lens[3], sanity_total);
 }
 
 /// "Tables"
@@ -378,36 +332,6 @@ table tables[] = {{masks[0], masks[1]},
                   {masks[0], masks[3]},
                   {masks[1], masks[3]}};
 
-///// "Tables"
-//
-//typedef int table_type;
-//
-//struct table
-//{
-//    const chunk &a;
-//
-//    inline table_type convert(const cube &c) const
-//    {
-//        const auto it = a.mask_to_id.find(a.mask(c));
-//        return it->second;
-//    }
-//
-//    inline table_type move_transform(int moveid, const table_type &cur)
-//    {
-//        return a.move_transform[moveid][cur];
-//    }
-//    inline int get_distance(const table_type &cur)
-//    {
-//        return a.distance[cur];
-//    }
-//
-//    table(const chunk &a) : a(a) {}
-//};
-//
-//#define NUM_TABLES 4
-//table tables[] = {masks[0], masks[1], masks[2], masks[3]};
-
-
 double DEBUG_2 = timer.clock()();
 
 
@@ -442,47 +366,6 @@ struct phase_1
 };
 
 cube phase_1_scramble(0,0);
-//int moves[20];
-//jmp_buf phase_1_start;
-//int phase_1_dfs(const phase_1 &cur, const int depth, const int fmax)
-//{
-//    nodes_visited++;
-//    if (!cur.heuristic)
-//    {
-//        cube x = phase_1_scramble;
-//        for (int i=0; i<depth; i++) x = x.make_move(moves[i]);
-//        const auto [cost,moveid] = phase_2[phase_2_mask(x)];
-//        if (cost || moveid)
-//        {
-//            for (int i=0; i<depth; i++) printf("%s", move_names[moves[i]]);
-//            cube cur = x;
-//            while (cur != cube::solved)
-//            {
-//                const auto [_,moveid] = phase_2[phase_2_mask(cur)];
-//                printf("%s", move_names[moveid]);
-//                cur = cur.make_move(moveid);
-//            }
-//            longjmp(phase_1_start, depth + cost);
-//        }
-//    }
-//    if (cur.heuristic + depth > fmax) return -cur.heuristic-depth;
-//
-//    int ret = INT_MIN;
-//    for (int i=0; i<18; i++)
-//    {
-//        if (cur.prev_move>=0)
-//        {
-//            if (i%6 == cur.prev_move%6) continue;
-//            if ((cur.prev_move-i+30)%6 == 1 && cur.prev_move%6) continue;
-//        }
-//        phase_1 next = cur.make_move(i);
-//        next.calc_heuristic();
-//        moves[depth] = i;
-//        ret = max(ret, phase_1_dfs(next, depth+1, fmax));
-//    }
-//    return ret;
-//}
-
 int phase_1_flat_dfs(const phase_1 &start, const int fmax)
 {
     int moves[20];
@@ -538,9 +421,6 @@ int phase_1_solver(const cube &raw)
     start.calc_heuristic();
     for (volatile int depth=1; depth<=13; depth=depth+1) // experimental results show a distribution from 8 to 14
     {
-//        int res = setjmp(phase_1_start);
-//        if (!res) phase_1_dfs(start, 0, depth);
-//        else return res;
         int res = phase_1_flat_dfs(start, depth);
         if (res) return res;
     }
